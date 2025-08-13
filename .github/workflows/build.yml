@@ -11,10 +11,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install CUDA Toolkit 12.2
+      # 强制走网络下载，禁用本地缓存
+      - name: Install CUDA Toolkit 12.2 (no cache)
         uses: Jimver/cuda-toolkit@v0.2.14
         with:
           cuda: '12.2.0'
+          method: 'network'
+          use-local-cache: false
 
       - name: Install CMake
         uses: lukka/get-cmake@latest
