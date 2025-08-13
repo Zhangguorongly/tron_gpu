@@ -6,19 +6,23 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 120  # CUDA 下载比较大，给足时间
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 用 Chocolatey 安装 CUDA（绕开 tool-cache）
-      - name: Install CUDA 12.2 via Chocolatey
+      # 用 Chocolatey 安装“当前仓库里可用的最新 CUDA”
+      - name: Install CUDA via Chocolatey (latest available)
         shell: powershell
         run: |
-          choco install cuda --version=12.2.0 -y --no-progress
-          # 加入 PATH，保证 nvcc 可用
-          echo "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.2\bin" >> $env:GITHUB_PATH
-          echo "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.2\libnvvp" >> $env:GITHUB_PATH
+          choco install cuda -y --no-progress
+          # 选出安装后的最新 CUDA 目录，写入 PATH & 环境变量
+          $cudaRoot = (Get-ChildItem "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA" `
+                       | Sort-Object Name -Descending | Select-Object -First 1).FullName
+          echo "$cudaRoot\bin"     >> $env:GITHUB_PATH
+          echo "$cudaRoot\libnvvp" >> $env:GITHUB_PATH
+          echo "CUDA_PATH=$cudaRoot" >> $env:GITHUB_ENV
           nvcc --version
 
       - name: Install CMake
