@@ -6,24 +6,33 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      - name: Install CUDA Toolkit 12.2
+        uses: Jimver/cuda-toolkit@v0.2.14
+        with:
+          cuda: '12.2.0'
+
       - name: Install CMake
         uses: lukka/get-cmake@latest
 
-      - name: Install vcpkg dependencies
+      - name: Install vcpkg + OpenSSL
         run: |
           git clone https://github.com/microsoft/vcpkg.git
           .\vcpkg\bootstrap-vcpkg.bat
           .\vcpkg\vcpkg install openssl:x64-windows
 
       - name: Configure (CMake)
-        run: |
-          cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}\vcpkg\scripts\buildsystems\vcpkg.cmake -A x64
+        run: >
+          cmake -B build -S .
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}\vcpkg\scripts\buildsystems\vcpkg.cmake
+          -A x64
+          -DCMAKE_CUDA_ARCHITECTURES=89
 
-      - name: Build
+      - name: Build (Release)
         run: cmake --build build --config Release
 
       - name: Upload EXE artifact
