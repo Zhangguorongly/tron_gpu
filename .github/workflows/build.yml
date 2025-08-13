@@ -11,27 +11,31 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 强制走网络下载，禁用本地缓存
-      - name: Install CUDA Toolkit 12.2 (no cache)
-        uses: Jimver/cuda-toolkit@v0.2.14
-        with:
-          cuda: '12.2.0'
-          method: 'network'
-          use-local-cache: false
+      # 用 Chocolatey 安装 CUDA（绕开 tool-cache）
+      - name: Install CUDA 12.2 via Chocolatey
+        shell: powershell
+        run: |
+          choco install cuda --version=12.2.0 -y --no-progress
+          # 加入 PATH，保证 nvcc 可用
+          echo "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.2\bin" >> $env:GITHUB_PATH
+          echo "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.2\libnvvp" >> $env:GITHUB_PATH
+          nvcc --version
 
       - name: Install CMake
         uses: lukka/get-cmake@latest
 
       - name: Install vcpkg + OpenSSL
+        shell: powershell
         run: |
           git clone https://github.com/microsoft/vcpkg.git
           .\vcpkg\bootstrap-vcpkg.bat
           .\vcpkg\vcpkg install openssl:x64-windows
 
       - name: Configure (CMake)
+        shell: bash
         run: >
           cmake -B build -S .
-          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}\vcpkg\scripts\buildsystems\vcpkg.cmake
+          -DCMAKE_TOOLCHAIN_FILE="${GITHUB_WORKSPACE}\vcpkg\scripts\buildsystems\vcpkg.cmake"
           -A x64
           -DCMAKE_CUDA_ARCHITECTURES=89
 
