@@ -6,28 +6,27 @@ on:
 jobs:
   build:
     runs-on: windows-latest
-    timeout-minutes: 120  # CUDA 下载比较大，给足时间
+    timeout-minutes: 120
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 用 Chocolatey 安装“当前仓库里可用的最新 CUDA”
-      - name: Install CUDA via Chocolatey (latest available)
+      # 安装 CUDA（最新可用版本），并把 nvcc 路径加入 PATH
+      - name: Install CUDA via Chocolatey (latest available) + set PATH
         shell: powershell
         run: |
           choco install cuda -y --no-progress
-          # 选出安装后的最新 CUDA 目录，写入 PATH & 环境变量
-          $cudaRoot = (Get-ChildItem "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA" `
-                       | Sort-Object Name -Descending | Select-Object -First 1).FullName
-          echo "$cudaRoot\bin"     >> $env:GITHUB_PATH
-          echo "$cudaRoot\libnvvp" >> $env:GITHUB_PATH
+          $cudaRoot = (Get-ChildItem "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA" | Sort-Object Name -Descending | Select-Object -First 1).FullName
           echo "CUDA_PATH=$cudaRoot" >> $env:GITHUB_ENV
-          nvcc --version
+          echo "$cudaRoot\bin"       >> $env:GITHUB_PATH
+          echo "$cudaRoot\libnvvp"   >> $env:GITHUB_PATH
+          & "$cudaRoot\bin\nvcc.exe" --version
 
       - name: Install CMake
         uses: lukka/get-cmake@latest
 
+      # vcpkg 安装 OpenSSL（供 CMake 的 find_package(OpenSSL) 使用）
       - name: Install vcpkg + OpenSSL
         shell: powershell
         run: |
@@ -35,19 +34,17 @@ jobs:
           .\vcpkg\bootstrap-vcpkg.bat
           .\vcpkg\vcpkg install openssl:x64-windows
 
-      - name: Configure (CMake)
-        shell: bash
-        run: >
-          cmake -B build -S .
-          -DCMAKE_TOOLCHAIN_FILE="${GITHUB_WORKSPACE}\vcpkg\scripts\buildsystems\vcpkg.cmake"
-          -A x64
-          -DCMAKE_CUDA_ARCHITECTURES=89
-
-      - name: Build (Release)
-        run: cmake --build build --config Release
+      # 调用 VS 的 vcvars64.bat 初始化 MSVC 环境，然后配置+编译
+      - name: Configure & Build (MSVC + CMake + CUDA)
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set VSINSTALL=%%i
+          call "%VSINSTALL%\VC\Auxiliary\Build\vcvars64.bat"
+          cmake -B build -S . -A x64 -DCMAKE_CUDA_ARCHITECTURES=89 -DCMAKE_TOOLCHAIN_FILE=%GITHUB_WORKSPACE%\vcpkg\scripts\buildsystems\vcpkg.cmake
+          cmake --build build --config Release
 
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v4
         with:
           name: tron_gpu_exe
-          path: build/Release/tron_gpu.exe
+          path: build\Release\tron_gpu.exe
