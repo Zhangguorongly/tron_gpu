@@ -12,8 +12,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 安装 CUDA（最新可用版本），并把 nvcc 路径加入 PATH
-      - name: Install CUDA via Chocolatey (latest available) + set PATH
+      # 安装 CUDA（最新可用），并把 nvcc 路径加入 PATH 和环境变量
+      - name: Install CUDA via Chocolatey (latest) + set PATH
         shell: powershell
         run: |
           choco install cuda -y --no-progress
@@ -26,7 +26,10 @@ jobs:
       - name: Install CMake
         uses: lukka/get-cmake@latest
 
-      # vcpkg 安装 OpenSSL（供 CMake 的 find_package(OpenSSL) 使用）
+      - name: Install Ninja (use Ninja generator, avoid MSBuild CUDA targets)
+        shell: powershell
+        run: choco install ninja -y --no-progress
+
       - name: Install vcpkg + OpenSSL
         shell: powershell
         run: |
@@ -34,17 +37,22 @@ jobs:
           .\vcpkg\bootstrap-vcpkg.bat
           .\vcpkg\vcpkg install openssl:x64-windows
 
-      # 调用 VS 的 vcvars64.bat 初始化 MSVC 环境，然后配置+编译
-      - name: Configure & Build (MSVC + CMake + CUDA)
-        shell: cmd
-        run: |
-          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set VSINSTALL=%%i
-          call "%VSINSTALL%\VC\Auxiliary\Build\vcvars64.bat"
-          cmake -B build -S . -A x64 -DCMAKE_CUDA_ARCHITECTURES=89 -DCMAKE_TOOLCHAIN_FILE=%GITHUB_WORKSPACE%\vcpkg\scripts\buildsystems\vcpkg.cmake
-          cmake --build build --config Release
+      # 用 Ninja 生成器，显式指定 CUDAToolkit_ROOT 和 CMAKE_CUDA_COMPILER=nvcc
+      - name: Configure (CMake + Ninja)
+        shell: bash
+        run: >
+          cmake -G "Ninja"
+          -B build -S .
+          -DCUDAToolkit_ROOT="$CUDA_PATH"
+          -DCMAKE_CUDA_COMPILER="$CUDA_PATH/bin/nvcc.exe"
+          -DCMAKE_CUDA_ARCHITECTURES=89
+          -DCMAKE_TOOLCHAIN_FILE="${GITHUB_WORKSPACE}\vcpkg\scripts\buildsystems\vcpkg.cmake"
+
+      - name: Build
+        run: cmake --build build --parallel
 
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v4
         with:
           name: tron_gpu_exe
-          path: build\Release\tron_gpu.exe
+          path: build/tron_gpu.exe   # Ninja 默认输出到 build 根目录
